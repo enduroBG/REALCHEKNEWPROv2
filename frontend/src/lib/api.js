@@ -9,6 +9,7 @@ export const api = axios.create({
 });
 
 export const analyze = (payload) => api.post("/analyze", payload).then((r) => r.data);
+export const analyzeImage = (payload) => api.post("/analyze-image", payload).then((r) => r.data);
 export const listChecks = (favoritesOnly = false) =>
   api.get("/checks", { params: { favorites_only: favoritesOnly } }).then((r) => r.data);
 export const getCheck = (id) => api.get(`/checks/${id}`).then((r) => r.data);

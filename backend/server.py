@@ -12,7 +12,7 @@ from typing import List, Optional, Literal
 import uuid
 from datetime import datetime, timezone
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 
 
 ROOT_DIR = Path(__file__).parent
@@ -84,6 +84,12 @@ class AnalysisResult(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     text: str
+    check_type: CheckType = "article"
+    title: Optional[str] = None
+
+
+class AnalyzeImageRequest(BaseModel):
+    image_base64: str  # raw base64 (no data: prefix)
     check_type: CheckType = "article"
     title: Optional[str] = None
 
@@ -234,24 +240,35 @@ async def run_analysis(text: str, check_type: str) -> tuple[dict, str, list[dict
     return _extract_json(response), web_text, web_sources
 
 
+IMAGE_EXTRACT_PROMPT = """Ти си помощник за извличане на текст и твърдения от изображение. \
+Получаваш снимка (реклама, етикет, скрийншот на новина, статия и т.н.). \
+Извлечи целия видим текст от снимката, ВКЛЮЧИТЕЛНО твърдения, числа, проценти, имена на марки и контактна информация. \
+Преведи на български, ако е на друг език. Ако в снимката няма текст, опиши какво показва снимката с фокус върху твърдения, които могат да бъдат проверени. \
+Върни само извлечения/описан текст, без коментари."""
+
+
+async def extract_text_from_image(image_b64: str) -> str:
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"realcheck-ocr-{uuid.uuid4()}",
+        system_message=IMAGE_EXTRACT_PROMPT,
+    ).with_model("gemini", "gemini-3.1-pro-preview")
+
+    msg = UserMessage(
+        text="Извлечи целия текст и твърдения от тази снимка на български.",
+        file_contents=[ImageContent(image_base64=image_b64)],
+    )
+    return (await chat.send_message(msg) or "").strip()
+
+
 # ---------- Routes ----------
 @api_router.get("/")
 async def root():
     return {"message": "RealCheck API", "status": "ok"}
 
 
-@api_router.post("/analyze", response_model=AnalysisResult)
-async def analyze(req: AnalyzeRequest):
-    if not req.text or len(req.text.strip()) < 20:
-        raise HTTPException(status_code=400, detail="Текстът трябва да е поне 20 символа.")
-    if not EMERGENT_LLM_KEY:
-        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY липсва в средата.")
-
-    try:
-        data, web_text, web_sources = await run_analysis(req.text, req.check_type)
-    except Exception as e:
-        logger.exception("LLM analysis failed")
-        raise HTTPException(status_code=502, detail=f"AI анализът се провали: {e}")
+async def _build_analysis_result(text: str, check_type: str, title_override: Optional[str]) -> AnalysisResult:
+    data, web_text, web_sources = await run_analysis(text, check_type)
 
     claims_raw = data.get("claims", [])
     claims = [Claim(**c) for c in claims_raw]
@@ -267,12 +284,12 @@ async def analyze(req: AnalyzeRequest):
         evidence=int(cats.get("evidence", 0)),
     )
 
-    title = req.title or data.get("title") or req.text[:60].strip() + "…"
+    title = title_override or data.get("title") or text[:60].strip() + "…"
 
     result = AnalysisResult(
         title=title[:120],
-        source_text=req.text,
-        check_type=req.check_type,
+        source_text=text,
+        check_type=check_type,
         reality_score=int(data.get("reality_score", 0)),
         risk_level=data.get("risk_level", "medium"),
         risk_summary=data.get("risk_summary", ""),
@@ -289,6 +306,51 @@ async def analyze(req: AnalyzeRequest):
     doc = result.model_dump()
     await db.checks.insert_one(doc)
     return result
+
+
+@api_router.post("/analyze", response_model=AnalysisResult)
+async def analyze(req: AnalyzeRequest):
+    if not req.text or len(req.text.strip()) < 20:
+        raise HTTPException(status_code=400, detail="Текстът трябва да е поне 20 символа.")
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY липсва в средата.")
+
+    try:
+        return await _build_analysis_result(req.text, req.check_type, req.title)
+    except Exception as e:
+        logger.exception("LLM analysis failed")
+        raise HTTPException(status_code=502, detail=f"AI анализът се провали: {e}")
+
+
+@api_router.post("/analyze-image", response_model=AnalysisResult)
+async def analyze_image(req: AnalyzeImageRequest):
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY липсва в средата.")
+    # strip optional data: prefix
+    img = req.image_base64
+    if img.startswith("data:"):
+        img = img.split(",", 1)[-1]
+    img = img.strip()
+    if len(img) < 100:
+        raise HTTPException(status_code=400, detail="Невалидна или твърде малка снимка.")
+
+    try:
+        extracted = await extract_text_from_image(img)
+    except Exception as e:
+        logger.exception("image OCR failed")
+        raise HTTPException(status_code=502, detail=f"Извличането от снимка се провали: {e}")
+
+    if not extracted or len(extracted.strip()) < 20:
+        raise HTTPException(
+            status_code=422,
+            detail="Не успях да извлека достатъчно текст от снимката. Опитай с по-ясно изображение.",
+        )
+
+    try:
+        return await _build_analysis_result(extracted, req.check_type, req.title)
+    except Exception as e:
+        logger.exception("LLM analysis failed (image)")
+        raise HTTPException(status_code=502, detail=f"AI анализът се провали: {e}")
 
 
 @api_router.get("/checks", response_model=List[AnalysisResult])
