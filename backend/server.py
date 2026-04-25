@@ -13,7 +13,6 @@ import uuid
 from datetime import datetime, timezone
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
-from openai import OpenAI as OpenAIClient
 
 
 ROOT_DIR = Path(__file__).parent
@@ -25,10 +24,6 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
-OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-5.2')
-
-openai_client = OpenAIClient(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 # Configure logging early so helpers can use it
 logging.basicConfig(
@@ -151,47 +146,57 @@ def _extract_json(text: str) -> dict:
 
 
 WEB_SEARCH_PROMPT = """Ти си изследовател за fact-checking. Получаваш текст (статия, реклама или новина) на български. \
-Използвай инструмента web_search, за да намериш актуални и достоверни източници, които потвърждават или опровергават \
-ключовите твърдения в текста. Върни кратко резюме на български (макс 600 думи) с конкретни факти от източниците \
-и цитирай URL-и. Не давай мнение - само факти от мрежата."""
+Използвай инструмента google_search, за да намериш актуални и достоверни източници за ключовите твърдения. \
+Върни кратко резюме на български (макс 500 думи) с конкретни факти от източниците.
+
+ВАЖНО: В края на резюмето добави секция „ИЗТОЧНИЦИ:" и изброй всеки използван URL на отделен ред във формат:
+- https://example.com/page (Заглавие на страницата)
+
+Не давай мнение - само факти от мрежата."""
+
+
+URL_RE = re.compile(r"https?://[^\s\)\]<>]+", re.IGNORECASE)
+
+
+def _extract_urls_from_text(text: str) -> list[dict]:
+    """Parse markdown-style links and bare URLs from a Gemini search response."""
+    sources: list[dict] = []
+    seen: set[str] = set()
+    # 1) markdown links [title](url)
+    for m in re.finditer(r"\[([^\]]+)\]\((https?://[^\s\)]+)\)", text):
+        title, url = m.group(1).strip(), m.group(2).strip().rstrip(".,;:")
+        if url not in seen:
+            seen.add(url)
+            sources.append({"url": url, "title": title})
+    # 2) bare URLs (often with optional "(Title)" after them)
+    for m in re.finditer(r"(https?://[^\s\)\]<>]+)(?:\s*\(([^)]+)\))?", text):
+        url = m.group(1).strip().rstrip(".,;:")
+        title = (m.group(2) or "").strip()
+        if url and url not in seen:
+            seen.add(url)
+            sources.append({"url": url, "title": title})
+    return sources
 
 
 def gather_web_context(text: str, check_type: str) -> tuple[str, list[dict]]:
-    """Use OpenAI gpt-5.2 with web_search to gather grounding context. Returns (text, sources)."""
-    if not openai_client:
-        return "", []
+    """Use Gemini 3 Pro with google_search grounding via Emergent proxy. Returns (text, sources)."""
     try:
-        # gpt-4o uses web_search_preview (no reasoning effort field for non-reasoning models)
-        resp = openai_client.responses.create(
-            model=OPENAI_MODEL,
-            tools=[{"type": "web_search_preview"}],
-            tool_choice="auto",
-            instructions=WEB_SEARCH_PROMPT,
-            input=f"Тип: {check_type}\n\nТекст за проверка:\n\"\"\"\n{text}\n\"\"\"",
-            include=["web_search_call.action.sources"],
+        import litellm
+        from emergentintegrations.llm.utils import get_integration_proxy_url
+
+        resp = litellm.completion(
+            model="gemini/gemini-3.1-pro-preview",
+            messages=[
+                {"role": "system", "content": WEB_SEARCH_PROMPT},
+                {"role": "user", "content": f"Тип: {check_type}\n\nТекст за проверка:\n\"\"\"\n{text}\n\"\"\""},
+            ],
+            api_key=EMERGENT_LLM_KEY,
+            api_base=get_integration_proxy_url() + "/llm",
+            custom_llm_provider="openai",
+            tools=[{"googleSearch": {}}],
         )
-        out_text = getattr(resp, "output_text", "") or ""
-        sources: list[dict] = []
-        seen = set()
-        for item in (resp.output or []):
-            # web_search_call sources
-            wsc = getattr(item, "web_search_call", None)
-            if wsc is not None:
-                action = getattr(wsc, "action", None)
-                for s in (getattr(action, "sources", None) or []):
-                    url = getattr(s, "url", None)
-                    if url and url not in seen:
-                        seen.add(url)
-                        sources.append({"url": url, "title": ""})
-            # message annotations (inline citations)
-            content = getattr(item, "content", None)
-            if isinstance(content, list):
-                for c in content:
-                    for ann in (getattr(c, "annotations", None) or []):
-                        url = getattr(ann, "url", None)
-                        if url and url not in seen:
-                            seen.add(url)
-                            sources.append({"url": url, "title": getattr(ann, "title", "") or ""})
+        out_text = (resp.choices[0].message.content or "").strip()
+        sources = _extract_urls_from_text(out_text)
         return out_text, sources
     except Exception as e:
         logger.warning(f"web search failed (non-fatal): {e}")
@@ -215,7 +220,7 @@ async def run_analysis(text: str, check_type: str) -> tuple[dict, str, list[dict
     web_block = ""
     if web_text:
         web_block = (
-            "\n\nДопълнителен контекст от уеб търсене (gpt-5.2 + web_search). "
+            "\n\nДопълнителен контекст от уеб търсене (Gemini 3 Pro + Google Search). "
             "Използвай го при оценката на твърденията:\n"
             f"\"\"\"\n{web_text}\n\"\"\""
         )

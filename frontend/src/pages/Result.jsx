@@ -192,7 +192,7 @@ export default function Result() {
               <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#58a6ff]">
                 ▸ Източници от мрежата
               </span>
-              <span className="font-mono text-[10px] text-[#484f58]">gpt-4o · web_search</span>
+              <span className="font-mono text-[10px] text-[#484f58]">gemini 3 pro · google_search</span>
             </div>
             <span className="font-mono text-[10px] text-[#8b949e]">
               {data.web_sources?.length || 0} източника
