@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { Home, Search, History, Star, Settings, Shield } from "lucide-react";
+import { Home, Search, History, Star, Settings } from "lucide-react";
 
 const items = [
   { to: "/", label: "Начало", icon: Home, testid: "nav-home" },
@@ -38,18 +38,18 @@ export default function Sidebar() {
       className="w-[260px] shrink-0 bg-[#161b22] border-r border-[#30363d] flex flex-col sticky top-0 h-screen"
       data-testid="sidebar"
     >
-      <div className="px-6 py-6 border-b border-[#30363d]">
-        <div className="flex items-center gap-2.5" data-testid="logo">
-          <div className="w-8 h-8 rounded-md bg-[#238636]/15 border border-[#3fb950]/30 flex items-center justify-center shadow-[0_0_15px_rgba(63,185,80,0.15)]">
-            <Shield size={18} className="text-[#3fb950]" strokeWidth={2} />
+      <div className="px-5 py-6 border-b border-[#30363d]">
+        <NavLink to="/" className="block group" data-testid="logo">
+          <div className="bg-white rounded-md p-3 shadow-[0_0_20px_rgba(63,185,80,0.15)] group-hover:shadow-[0_0_25px_rgba(63,185,80,0.3)] transition-shadow">
+            <img
+              src="/assets/logo.jpg"
+              alt="RealCheck"
+              className="w-full h-auto block"
+            />
           </div>
-          <div className="font-heading font-black text-xl tracking-tight">
-            <span className="text-[#3fb950]">Real</span>
-            <span className="text-white">Check</span>
-          </div>
-        </div>
-        <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-[#484f58]">
-          v1.0 · анализатор
+        </NavLink>
+        <div className="mt-3 font-mono text-[10px] uppercase tracking-[0.2em] text-[#484f58] text-center">
+          v1.1 · анализатор
         </div>
       </div>
 
