@@ -59,8 +59,8 @@ export default function Result() {
   return (
     <div className="space-y-6" data-testid="page-result">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 rc-reveal">
-        <div className="min-w-0">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 rc-reveal">
+        <div className="min-w-0 order-2 sm:order-1">
           <Link to="/history" data-testid="back-link" className="inline-flex items-center gap-1 font-mono text-xs uppercase tracking-wider text-[#8b949e] hover:text-[#c9d1d9] mb-3">
             <ArrowLeft size={12} /> назад
           </Link>
@@ -70,11 +70,11 @@ export default function Result() {
             <span>•</span>
             <span>{new Date(data.created_at).toLocaleString("bg-BG")}</span>
           </div>
-          <h1 className="font-heading text-2xl md:text-3xl font-bold text-white tracking-tight">
+          <h1 className="font-heading text-xl sm:text-2xl md:text-3xl font-bold text-white tracking-tight">
             {data.title}
           </h1>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 order-1 sm:order-2 self-end sm:self-start">
           <button
             onClick={onFav}
             data-testid="btn-favorite"
@@ -100,8 +100,8 @@ export default function Result() {
 
       {/* Hero: score + risk + categories */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <div className="col-span-12 lg:col-span-5 bg-[#161b22] border border-[#30363d] rounded-lg p-6 flex items-center gap-6 rc-reveal">
-          <ScoreCircle score={data.reality_score} size={170} stroke={10} />
+        <div className="col-span-12 lg:col-span-5 bg-[#161b22] border border-[#30363d] rounded-lg p-5 sm:p-6 flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-left gap-5 sm:gap-6 rc-reveal">
+          <ScoreCircle score={data.reality_score} size={150} stroke={9} />
           <div className="min-w-0">
             <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8b949e] mb-2">
               Рейтинг на достоверност

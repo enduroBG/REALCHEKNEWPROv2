@@ -42,14 +42,14 @@ export default function Home() {
         <div className="font-mono text-[10px] uppercase tracking-[0.25em] text-[#8b949e] mb-3">
           ▸ контролно табло
         </div>
-        <h1 className="font-heading text-4xl md:text-5xl font-black tracking-tight text-white mb-3">
+        <h1 className="font-heading text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-white mb-3">
           Анализирай. Провери. <span className="text-[#3fb950]">Доверявай се.</span>
         </h1>
         <p className="text-[#8b949e] max-w-2xl text-base leading-relaxed">
           RealCheck открива подвеждащи, преувеличени и непотвърдени твърдения в статии,
           реклами и новини с помощта на Gemini 3 Pro.
         </p>
-        <div className="mt-6 flex gap-3">
+        <div className="mt-6 flex flex-wrap gap-3">
           <Link
             to="/new"
             data-testid="cta-new-check"
@@ -69,7 +69,7 @@ export default function Home() {
       </section>
 
       {/* Stats */}
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatBox testid="stat-total" label="Общо проверки" value={loading ? "—" : stats?.total_checks ?? 0} icon={BarChart3} />
         <StatBox testid="stat-avg" label="Среден рейтинг" value={loading ? "—" : stats?.avg_score ?? 0} accent="#3fb950" icon={ShieldCheck} />
         <StatBox testid="stat-suspicious" label="Съмнителни" value={loading ? "—" : stats?.total_suspicious ?? 0} accent="#d29922" icon={AlertTriangle} />
