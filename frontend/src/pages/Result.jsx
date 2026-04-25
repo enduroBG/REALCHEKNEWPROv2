@@ -183,6 +183,58 @@ export default function Result() {
           {data.source_text}
         </div>
       </details>
+
+      {/* Web grounding sources */}
+      {(data.web_sources?.length > 0 || data.web_context) && (
+        <section className="bg-[#161b22] border border-[#30363d] rounded-lg overflow-hidden" data-testid="web-sources-section">
+          <div className="px-5 py-3 border-b border-[#30363d] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#58a6ff]">
+                ▸ Източници от мрежата
+              </span>
+              <span className="font-mono text-[10px] text-[#484f58]">gpt-5.2 · web_search</span>
+            </div>
+            <span className="font-mono text-[10px] text-[#8b949e]">
+              {data.web_sources?.length || 0} източника
+            </span>
+          </div>
+          {data.web_context && (
+            <div className="p-4 text-sm text-[#c9d1d9] leading-relaxed border-b border-[#30363d] whitespace-pre-wrap">
+              {data.web_context}
+            </div>
+          )}
+          {data.web_sources?.length > 0 && (
+            <ul className="divide-y divide-[#30363d]">
+              {data.web_sources.map((s, i) => (
+                <li key={i} data-testid={`web-source-${i}`} className="px-4 py-2.5 hover:bg-[#21262d] transition-colors">
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 text-sm group"
+                  >
+                    <span className="font-mono text-[10px] text-[#484f58] w-6">
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <span className="text-[#58a6ff] group-hover:underline truncate flex-1">
+                      {s.title || s.url}
+                    </span>
+                    <span className="font-mono text-[10px] text-[#484f58] hidden md:inline truncate max-w-[300px]">
+                      {(() => {
+                        try {
+                          return new URL(s.url).hostname;
+                        } catch {
+                          return s.url;
+                        }
+                      })()}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </div>
   );
 }

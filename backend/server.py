@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timezone
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+from openai import OpenAI as OpenAIClient
 
 
 ROOT_DIR = Path(__file__).parent
@@ -24,6 +25,17 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-5.2')
+
+openai_client = OpenAIClient(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+# Configure logging early so helpers can use it
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Create the main app without a prefix
 app = FastAPI(title="RealCheck API")
@@ -50,6 +62,11 @@ class CategoryScores(BaseModel):
     evidence: int = Field(ge=0, le=100)
 
 
+class WebSource(BaseModel):
+    url: str
+    title: str = ""
+
+
 class AnalysisResult(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str
@@ -64,6 +81,8 @@ class AnalysisResult(BaseModel):
     claims_unconfirmed: int
     claims: List[Claim]
     categories: CategoryScores
+    web_context: str = ""
+    web_sources: List[WebSource] = Field(default_factory=list)
     is_favorite: bool = False
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -131,19 +150,83 @@ def _extract_json(text: str) -> dict:
     return json.loads(text[start:end + 1])
 
 
-async def run_analysis(text: str, check_type: str) -> dict:
+WEB_SEARCH_PROMPT = """Ти си изследовател за fact-checking. Получаваш текст (статия, реклама или новина) на български. \
+Използвай инструмента web_search, за да намериш актуални и достоверни източници, които потвърждават или опровергават \
+ключовите твърдения в текста. Върни кратко резюме на български (макс 600 думи) с конкретни факти от източниците \
+и цитирай URL-и. Не давай мнение - само факти от мрежата."""
+
+
+def gather_web_context(text: str, check_type: str) -> tuple[str, list[dict]]:
+    """Use OpenAI gpt-5.2 with web_search to gather grounding context. Returns (text, sources)."""
+    if not openai_client:
+        return "", []
+    try:
+        resp = openai_client.responses.create(
+            model=OPENAI_MODEL,
+            reasoning={"effort": "low"},
+            tools=[{"type": "web_search"}],
+            tool_choice="auto",
+            instructions=WEB_SEARCH_PROMPT,
+            input=f"Тип: {check_type}\n\nТекст за проверка:\n\"\"\"\n{text}\n\"\"\"",
+            include=["web_search_call.action.sources"],
+        )
+        out_text = getattr(resp, "output_text", "") or ""
+        sources: list[dict] = []
+        seen = set()
+        for item in (resp.output or []):
+            # web_search_call sources
+            wsc = getattr(item, "web_search_call", None)
+            if wsc is not None:
+                action = getattr(wsc, "action", None)
+                for s in (getattr(action, "sources", None) or []):
+                    url = getattr(s, "url", None)
+                    if url and url not in seen:
+                        seen.add(url)
+                        sources.append({"url": url, "title": ""})
+            # message annotations (inline citations)
+            content = getattr(item, "content", None)
+            if isinstance(content, list):
+                for c in content:
+                    for ann in (getattr(c, "annotations", None) or []):
+                        url = getattr(ann, "url", None)
+                        if url and url not in seen:
+                            seen.add(url)
+                            sources.append({"url": url, "title": getattr(ann, "title", "") or ""})
+        return out_text, sources
+    except Exception as e:
+        logger.warning(f"web search failed (non-fatal): {e}")
+        return "", []
+
+
+async def run_analysis(text: str, check_type: str) -> tuple[dict, str, list[dict]]:
+    # Stage 1: web search context via OpenAI gpt-5.2
+    import anyio
+    web_text, web_sources = await anyio.to_thread.run_sync(
+        gather_web_context, text, check_type
+    )
+
+    # Stage 2: Gemini 3 Pro analysis grounded in web findings
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
         session_id=f"realcheck-{uuid.uuid4()}",
         system_message=SYSTEM_PROMPT,
     ).with_model("gemini", "gemini-3.1-pro-preview")
 
+    web_block = ""
+    if web_text:
+        web_block = (
+            "\n\nДопълнителен контекст от уеб търсене (gpt-5.2 + web_search). "
+            "Използвай го при оценката на твърденията:\n"
+            f"\"\"\"\n{web_text}\n\"\"\""
+        )
+
     user_text = (
         f"Тип на съдържанието: {check_type}\n\n"
         f"Съдържание за анализ:\n\"\"\"\n{text}\n\"\"\""
+        f"{web_block}"
     )
     response = await chat.send_message(UserMessage(text=user_text))
-    return _extract_json(response)
+    return _extract_json(response), web_text, web_sources
 
 
 # ---------- Routes ----------
@@ -160,7 +243,7 @@ async def analyze(req: AnalyzeRequest):
         raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY липсва в средата.")
 
     try:
-        data = await run_analysis(req.text, req.check_type)
+        data, web_text, web_sources = await run_analysis(req.text, req.check_type)
     except Exception as e:
         logger.exception("LLM analysis failed")
         raise HTTPException(status_code=502, detail=f"AI анализът се провали: {e}")
@@ -194,6 +277,8 @@ async def analyze(req: AnalyzeRequest):
         claims_unconfirmed=counts["unconfirmed"],
         claims=claims,
         categories=categories,
+        web_context=web_text or "",
+        web_sources=[WebSource(**s) for s in (web_sources or [])],
     )
 
     doc = result.model_dump()
@@ -276,13 +361,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 
 @app.on_event("shutdown")
