@@ -117,7 +117,7 @@ export default function NewCheck() {
           {loading ? (
             <>
               <Loader2 size={16} className="animate-spin" />
-              Търсене в мрежата (gpt-5.2) → анализ (Gemini 3 Pro)…
+              Търсене в мрежата (gpt-4o) → анализ (Gemini 3 Pro)…
             </>
           ) : (
             <>

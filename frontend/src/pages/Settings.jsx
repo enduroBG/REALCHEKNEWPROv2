@@ -31,7 +31,7 @@ export default function Settings() {
         </div>
         <Row icon={Globe} label="Език на интерфейса" value="Български (bg)" testid="cfg-lang" />
         <Row icon={Cpu} label="AI модел (анализ)" value="Gemini 3 Pro" testid="cfg-model" />
-        <Row icon={Cpu} label="Уеб търсене" value="OpenAI gpt-5.2 + web_search" testid="cfg-search" />
+        <Row icon={Cpu} label="Уеб търсене" value="OpenAI gpt-4o + web_search" testid="cfg-search" />
         <Row icon={Shield} label="Версия" value="1.1.0" testid="cfg-version" />
         <Row icon={Github} label="Тема" value="Dark · Terminal" testid="cfg-theme" />
       </section>
@@ -39,7 +39,7 @@ export default function Settings() {
       <section className="bg-[#161b22] border border-[#30363d] rounded-lg p-6">
         <h3 className="font-heading text-lg font-semibold text-white mb-2">Как работи RealCheck?</h3>
         <p className="text-[#8b949e] text-sm leading-relaxed">
-          RealCheck използва двуетапен AI пайплайн: първо <span className="text-[#58a6ff] font-medium">OpenAI gpt-5.2</span> с web_search инструмент
+          RealCheck използва двуетапен AI пайплайн: първо <span className="text-[#58a6ff] font-medium">OpenAI gpt-4o</span> с web_search инструмент
           търси актуални факти и източници в мрежата, след което <span className="text-[#3fb950] font-medium">Gemini 3 Pro</span> оценява всяко
           твърдение като <span className="text-[#3fb950] font-medium">потвърдено</span>,{" "}
           <span className="text-[#d29922] font-medium">съмнително</span> или{" "}

@@ -161,10 +161,10 @@ def gather_web_context(text: str, check_type: str) -> tuple[str, list[dict]]:
     if not openai_client:
         return "", []
     try:
+        # gpt-4o uses web_search_preview (no reasoning effort field for non-reasoning models)
         resp = openai_client.responses.create(
             model=OPENAI_MODEL,
-            reasoning={"effort": "low"},
-            tools=[{"type": "web_search"}],
+            tools=[{"type": "web_search_preview"}],
             tool_choice="auto",
             instructions=WEB_SEARCH_PROMPT,
             input=f"Тип: {check_type}\n\nТекст за проверка:\n\"\"\"\n{text}\n\"\"\"",

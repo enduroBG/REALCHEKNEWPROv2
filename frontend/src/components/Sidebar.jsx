@@ -67,7 +67,7 @@ export default function Sidebar() {
           <Item key={item.to} {...item} />
         ))}
         <div className="px-4 pt-3 font-mono text-[10px] text-[#484f58]">
-          gpt-5.2 search · gemini 3 pro
+          gpt-4o search · gemini 3 pro
         </div>
       </div>
     </aside>
